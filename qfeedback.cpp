@@ -164,6 +164,8 @@ QFeedbackFFMemless::~QFeedbackFFMemless()
 {
     if (m_vibraSpiDevice != -1)
         close(m_vibraSpiDevice);
+
+    m_mmiVibraFile.close();
 }
 
 void QFeedbackFFMemless::initialiseConstants()
@@ -289,6 +291,13 @@ bool QFeedbackFFMemless::initialiseEffects()
     m_themeEffectsPossible = false;
     m_customEffectsPossible = false;
     m_actuatorEnabled = false;
+
+    m_mmiVibraFile.setFileName("/sys/module/board_mmi_vibrator/parameters/enable_us");
+    if (!m_mmiVibraFile.open(QIODevice::WriteOnly)) {
+        qDebug() << "Failed to open " + m_mmiVibraFile.fileName();
+        m_initialising = false;
+        return false;
+    }
 
     // close the previous fd to the ff-memless ioctl
     if (m_vibraSpiDevice != -1) {
@@ -437,12 +446,12 @@ bool QFeedbackFFMemless::play(QFeedbackEffect::ThemeEffect effect)
         return false;
 
     // use Q_LIKELY to optimise for VKB key presses
-    if (Q_LIKELY(effect == QFeedbackEffect::ThemeBasicKeypad && m_periodicThemeEffectsPossible)) {
+    if (Q_LIKELY(effect == QFeedbackEffect::ThemeBasicKeypad)) {
         if (Q_UNLIKELY(m_profileTouchscreenVibraLevel == 0)) {
             return false;
         }
-        m_themeEffectPlayEvent.code = m_periodicThemeEffect.id;
-        return writeEffectEvent(&m_themeEffectPlayEvent);
+        enable_mmiVibra(KEYPAD_PRESS_DURATION);
+        return true;
     }
 
     switch (effect) {
@@ -452,17 +461,6 @@ bool QFeedbackFFMemless::play(QFeedbackEffect::ThemeEffect effect)
             m_themeEffect.u.rumble.weak_magnitude = LONG_PRESS_MIN;
             m_themeEffect.replay.length = LONG_PRESS_DURATION;
             m_themeEffect.replay.delay = LONG_PRESS_DELAY;
-        }
-        break;
-        case QFeedbackEffect::ThemeBasicKeypad:
-        {
-            if (Q_UNLIKELY(m_profileTouchscreenVibraLevel == 0))
-                return false;
-
-            m_themeEffect.u.rumble.strong_magnitude = KEYPAD_PRESS_MAX;
-            m_themeEffect.u.rumble.weak_magnitude = KEYPAD_PRESS_MIN;
-            m_themeEffect.replay.length = KEYPAD_PRESS_DURATION;
-            m_themeEffect.replay.delay = KEYPAD_PRESS_DELAY;
         }
         break;
         case QFeedbackEffect::ThemeBasicButton: // BasicButton is the default.
@@ -478,6 +476,11 @@ bool QFeedbackFFMemless::play(QFeedbackEffect::ThemeEffect effect)
             m_themeEffect.replay.delay = BUTTON_PRESS_DELAY;
         }
         break;
+    }
+
+    if (m_themeEffect.replay.length <= 40) { // software pwm (ffmemless driver) works poorly for short events
+        enable_mmiVibra(m_themeEffect.replay.length);
+        return true;
     }
 
     if (!uploadEffect(&m_themeEffect))
@@ -707,4 +710,8 @@ QFeedbackEffect::State QFeedbackFFMemless::effectState(const QFeedbackHapticsEff
     return QFeedbackEffect::Stopped;
 }
 
-
+void QFeedbackFFMemless::enable_mmiVibra(int msec)
+{
+    m_mmiVibraFile.write(QByteArray::number(msec * 1000));
+    m_mmiVibraFile.flush();
+}

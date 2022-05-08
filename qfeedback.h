@@ -47,6 +47,7 @@
 #include <linux/input.h>
 #include <QElapsedTimer>
 #include <QTimer>
+#include <QFile>
 
 QT_BEGIN_HEADER
 
@@ -94,6 +95,7 @@ private:
     bool initialiseEffects();
     bool uploadEffect(struct ff_effect *effect);
     bool writeEffectEvent(struct input_event *event);
+    void enable_mmiVibra(int msec);
 
 private:
     // profile change detection (normal / silent / airplane etc)
@@ -116,6 +118,7 @@ private:
     int m_vibraSpiDevice;
     bool m_actuatorEnabled;
     bool m_periodicEffectIsActive;
+    QFile m_mmiVibraFile;
 
     // determined during ctor.
     bool m_supportsRumble;
